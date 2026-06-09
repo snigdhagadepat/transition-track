@@ -6,6 +6,7 @@ import {
   User, Bot, Loader2, AlertCircle
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
+import { findDemoResponse } from '../data/pathfinderDemo'
 
 // ─── Types ────────────────────────────────────────────────────────
 interface Message {
@@ -276,11 +277,12 @@ export default function Pathfinder() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // In production (Vercel) the API key lives server-side in env vars — no key prompt needed.
-  // In dev the Vite proxy forwards to Anthropic and we use a locally-stored key.
   const isProd = import.meta.env.PROD
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('pf_api_key') || '')
-  const [showKeyPrompt, setShowKeyPrompt] = useState(!isProd && !localStorage.getItem('pf_api_key'))
+  // Demo mode = no API key needed. Real mode = Vercel env var (prod) or localStorage key (dev).
+  const hasServerKey = isProd // Vercel has ANTHROPIC_API_KEY in env vars
+  const [apiKey] = useState(() => localStorage.getItem('pf_api_key') || '')
+  const [showKeyPrompt] = useState(false) // never show key prompt — demo mode handles it
+  const isDemoMode = !hasServerKey && !apiKey
   const [keyDraft, setKeyDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -338,40 +340,51 @@ export default function Pathfinder() {
       : history
 
     try {
-      // Production: POST to our Vercel serverless function (/api/chat)
-      // Development: POST through the Vite proxy to Anthropic directly
-      const endpoint = isProd
-        ? '/api/chat'
-        : '/api/anthropic/v1/messages'
+      let rawText = ''
+      let cards: CareerCard[] = []
 
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (!isProd) {
-        headers['x-api-key'] = apiKey
-        headers['anthropic-version'] = '2023-06-01'
+      if (isDemoMode) {
+        // ── Demo mode: use pre-written responses, no API needed ──────
+        await new Promise((r) => setTimeout(r, 900)) // realistic typing delay
+        const demo = findDemoResponse(text)
+        rawText = demo.text
+        cards = demo.cards
+      } else {
+        // ── Live mode: call real Claude API ──────────────────────────
+        const endpoint = isProd ? '/api/chat' : '/api/anthropic/v1/messages'
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (!isProd) {
+          headers['x-api-key'] = apiKey
+          headers['anthropic-version'] = '2023-06-01'
+        }
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 2048,
+            system: SYSTEM_PROMPT,
+            messages: [...messages, userMsg]
+              .filter((m) => m.id !== 'welcome')
+              .map((m) => ({ role: m.role, content: m.content })),
+          }),
+        })
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}))
+          const msg = (errData as any)?.error?.message || `API error ${res.status}`
+          if (res.status === 401) throw new Error('Invalid API key. Please check your key and try again.')
+          if (res.status === 429) throw new Error('Rate limited — please wait a moment and try again.')
+          throw new Error(msg)
+        }
+
+        const data = await res.json() as { content: { type: string; text: string }[] }
+        rawText = data.content.find((c) => c.type === 'text')?.text || ''
+        const parsed = parseCareerCards(rawText)
+        rawText = parsed.text
+        cards = parsed.cards
       }
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2048,
-          system: SYSTEM_PROMPT,
-          messages: apiMessages,
-        }),
-      })
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}))
-        const msg = (errData as any)?.error?.message || `API error ${res.status}`
-        if (res.status === 401) throw new Error('Invalid API key. Please check your key and try again.')
-        if (res.status === 429) throw new Error('Rate limited — please wait a moment and try again.')
-        throw new Error(msg)
-      }
-
-      const data = await res.json() as { content: { type: string; text: string }[] }
-      const rawText = data.content.find((c) => c.type === 'text')?.text || ''
-      const { text: cleanText, cards } = parseCareerCards(rawText)
 
       const assistantMsg: Message = {
         id: `a-${Date.now()}`,
@@ -485,10 +498,17 @@ export default function Pathfinder() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-xs text-emerald-400 font-medium">Claude AI</span>
-          </div>
+          {isDemoMode ? (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-violet-500/10 border border-violet-500/20">
+              <div className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+              <span className="text-xs text-violet-400 font-medium">Demo mode</span>
+            </div>
+          ) : (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-emerald-400 font-medium">Claude AI</span>
+            </div>
+          )}
           {!isProd && (
             <button
               onClick={() => { setShowKeyPrompt(true); setKeyDraft('') }}
