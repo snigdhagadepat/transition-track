@@ -102,9 +102,9 @@ function Edge({ from, to, color }: { from: THREE.Vector3; to: THREE.Vector3; col
   })
 
   return (
-    <line ref={ref as any} geometry={geometry}>
+    <primitive object={Object.assign(new THREE.Line(geometry), {})} ref={ref}>
       <lineBasicMaterial color={color} transparent opacity={0.35} linewidth={1} />
-    </line>
+    </primitive>
   )
 }
 

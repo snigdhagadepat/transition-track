@@ -281,9 +281,7 @@ export default function Pathfinder() {
   // Demo mode = no API key needed. Real mode = Vercel env var (prod) or localStorage key (dev).
   const hasServerKey = isProd // Vercel has ANTHROPIC_API_KEY in env vars
   const [apiKey] = useState(() => localStorage.getItem('pf_api_key') || '')
-  const [showKeyPrompt] = useState(false) // never show key prompt — demo mode handles it
   const isDemoMode = !hasServerKey && !apiKey
-  const [keyDraft, setKeyDraft] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -301,18 +299,6 @@ export default function Pathfinder() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
-
-  const saveApiKey = () => {
-    const trimmed = keyDraft.trim()
-    if (!trimmed.startsWith('sk-ant-')) {
-      setError('That doesn\'t look like an Anthropic API key (should start with sk-ant-)')
-      return
-    }
-    localStorage.setItem('pf_api_key', trimmed)
-    setApiKey(trimmed)
-    setShowKeyPrompt(false)
-    setError(null)
-  }
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || loading) return
@@ -429,54 +415,7 @@ export default function Pathfinder() {
     setError(null)
   }
 
-  // ── API Key prompt ──────────────────────────────────────────────
-  if (showKeyPrompt) {
-    return (
-      <div className="max-w-lg mx-auto px-4 py-20 flex flex-col items-center text-center">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-blue-600 flex items-center justify-center mb-6">
-          <Sparkles size={28} className="text-white" />
-        </div>
-        <h1 className="text-2xl font-bold text-slate-100 mb-2">Meet Pathfinder 🧭</h1>
-        <p className="text-slate-400 mb-8 leading-relaxed">
-          Pathfinder uses Claude AI to reveal niche, global careers you've never heard of.
-          To get started, enter your Anthropic API key — it's stored only in your browser.
-        </p>
 
-        <div className="w-full space-y-3">
-          <input
-            type="password"
-            className="input text-sm"
-            placeholder="sk-ant-api03-..."
-            value={keyDraft}
-            onChange={(e) => setKeyDraft(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && saveApiKey()}
-            autoFocus
-          />
-          {error && (
-            <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 rounded-xl px-4 py-3">
-              <AlertCircle size={14} />
-              {error}
-            </div>
-          )}
-          <button onClick={saveApiKey} className="btn-primary w-full">
-            Start Exploring
-          </button>
-          <p className="text-xs text-slate-600">
-            Get a free API key at{' '}
-            <a
-              href="https://console.anthropic.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-violet-400 hover:text-violet-300"
-            >
-              console.anthropic.com
-            </a>
-            . Your key never leaves your device.
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   // ── Main chat UI ───────────────────────────────────────────────
   return (
@@ -508,14 +447,6 @@ export default function Pathfinder() {
               <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-emerald-400 font-medium">Claude AI</span>
             </div>
-          )}
-          {!isProd && (
-            <button
-              onClick={() => { setShowKeyPrompt(true); setKeyDraft('') }}
-              className="text-xs text-slate-600 hover:text-slate-400 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
-            >
-              Change key
-            </button>
           )}
           <button
             onClick={clearChat}
